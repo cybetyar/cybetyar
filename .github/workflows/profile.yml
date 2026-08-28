@@ -1,0 +1,53 @@
+name: profile
+
+# Rebuilds assets/stats-*.svg from the real GitHub API and commits the result,
+# so the README never depends on a third-party widget service.
+#
+# Setup: create a classic personal access token with the `read:user` scope
+# (that is what exposes private contribution counts) and save it in this repo
+# as the secret PROFILE_TOKEN. Without it the job falls back to GITHUB_TOKEN,
+# which only sees public activity.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/profile.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: profile-board
+  cancel-in-progress: true
+
+jobs:
+  board:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Rebuild the art
+        run: node scripts/build.mjs
+
+      - name: Rebuild the board
+        env:
+          GH_LOGIN: ${{ github.repository_owner }}
+          GH_TOKEN: ${{ secrets.PROFILE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: node scripts/sync-stats.mjs
+
+      - name: Commit if anything changed
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add assets/
+          git diff --quiet --cached || git commit -m 'chore: refresh the board'
+          git push
